@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: raw
+    database: "{{ env_var('GCP_PROJECT_ID') }}"
+    schema: "{{ env_var('BQ_RAW_DATASET', 'velib_raw') }}"
+    tables:
+      - name: velib_stations_status
+        description: Snapshots horaires bruts de l'état des stations Vélib' (API Paris Open Data).
+        loaded_at_field: ingested_at
+        freshness:
+          warn_after: {count: 2, period: hour}
+          error_after: {count: 6, period: hour}
+        columns:
+          - name: stationcode
+            tests: [not_null]
+          - name: snapshot_hour
+            tests: [not_null]

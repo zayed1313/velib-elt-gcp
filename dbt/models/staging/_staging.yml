@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: stg_velib__stations_status
+    description: Snapshots nettoyés, typés et dédoublonnés (1 ligne par station et par heure).
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [station_id, snapshot_hour]
+    columns:
+      - name: station_id
+        tests: [not_null]
+      - name: snapshot_hour
+        tests: [not_null]
+      - name: bikes_available
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: capacity
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0

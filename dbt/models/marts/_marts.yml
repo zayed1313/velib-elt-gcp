@@ -1,0 +1,45 @@
+version: 2
+
+models:
+  - name: dim_stations
+    description: Une ligne par station, derniers attributs connus.
+    columns:
+      - name: station_id
+        tests: [unique, not_null]
+      - name: latitude
+        tests:
+          - dbt_utils.accepted_range: {min_value: 48.0, max_value: 49.5}
+      - name: longitude
+        tests:
+          - dbt_utils.accepted_range: {min_value: 1.5, max_value: 3.5}
+
+  - name: fct_station_availability
+    description: Disponibilité horaire par station (incrémental, partitionné par jour).
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [station_id, snapshot_hour]
+    columns:
+      - name: station_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_stations')
+              field: station_id
+      - name: occupancy_rate
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              severity: warn  # l'API a parfois des incohérences ponctuelles
+
+  - name: mart_station_daily
+    description: Indicateurs journaliers par station.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [station_id, snapshot_date]
+
+  - name: mart_commune_hourly_profile
+    description: Profil horaire moyen par commune.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [commune, hour_of_day]

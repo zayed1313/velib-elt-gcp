@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: python -m pytest -q
+
+  dbt:
+    runs-on: ubuntu-latest
+    env:
+      GCP_PROJECT_ID: ci-project
+      GOOGLE_APPLICATION_CREDENTIALS: /tmp/fake-key.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install dbt-bigquery==1.9.1
+      - name: Parse du projet dbt (valide SQL/Jinja et schémas sans accès GCP)
+        working-directory: dbt
+        run: |
+          dbt deps --profiles-dir .
+          dbt parse --profiles-dir .
