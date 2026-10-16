@@ -1,0 +1,75 @@
+name: Terraform plan
+
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/terraform-plan.yml"
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: terraform-plan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    # Les PR venant de forks n'ont ni variables ni identité OIDC
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    defaults:
+      run:
+        working-directory: infra/terraform
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+      TF_VAR_raw_bucket_name: ${{ vars.GCP_PROJECT_ID }}-velib-raw
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authentification GCP (Workload Identity Federation, sans clé)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: terraform-plan@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+          terraform_wrapper: false
+
+      - name: Init
+        run: terraform init -input=false -backend-config="bucket=${{ vars.GCP_PROJECT_ID }}-tfstate"
+
+      - name: Plan
+        id: plan
+        shell: bash
+        run: terraform plan -input=false -lock=false -no-color 2>&1 | tee plan.txt
+
+      - name: Commenter le plan dans la PR
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PLAN_OUTCOME: ${{ steps.plan.outcome }}
+        with:
+          script: |
+            const fs = require('fs');
+            const file = 'infra/terraform/plan.txt';
+            let plan = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : 'Plan indisponible (voir les logs du job).';
+            if (plan.length > 60000) plan = plan.slice(-60000);
+            const icon = process.env.PLAN_OUTCOME === 'success' ? '✅' : '❌';
+            const marker = '<!-- terraform-plan -->';
+            const body = `${marker}\n### ${icon} Terraform plan\n\n<details><summary>Voir le plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`;
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }
